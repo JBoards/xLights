@@ -728,7 +728,16 @@ void ShaderEffect::Render(Effect* eff, SettingsMap& SettingsMap, RenderBuffer& b
     // ***********************************************************************************************************
     // todo is there more of this code we could add to the needtoinit case as this only happens on the first frame
     // ***********************************************************************************************************
-
+    const std::list<float>* fftData;
+    if (_shaderConfig->IsAudioFFTShader())
+    {
+        AudioManager* audioManager = buffer.GetMedia();
+        if (audioManager != nullptr)
+        {
+            fftData = audioManager->GetFrameData(buffer.curPeriod, FRAMEDATA_VU, "");
+            logger_base.info("ShaderEffect::Render() - TODO - audio shader rendering with %d", int(fftData->size()));
+        }
+    }
     // We re-use the same framebuffer for rendering all the shader effects
     sizeForRenderBuffer(buffer, s_shadersInit, s_vertexArrayId, s_vertexBufferId, s_rbId, s_fbId, s_rbTex, s_rbWidth, s_rbHeight);
 
@@ -901,6 +910,11 @@ void ShaderEffect::sizeForRenderBuffer(const RenderBuffer& rb,
            { {  1.f,  1.f }, { 1.f, 1.f } },
            { { -1.f,  1.f }, { 0.f, 1.f } }
         };
+        GLenum err = glGetError();
+        if ( err != GL_NO_ERROR )
+        {
+           logger_base.error( "ShaderEffect::sizeForRenderBuffer() - Error starting out - %d", err );
+        }
         LOG_GL_ERRORV(glGenVertexArrays(1, &s_vertexArrayId));
         LOG_GL_ERRORV(glGenBuffers(1, &s_vertexBufferId));
 
@@ -910,7 +924,7 @@ void ShaderEffect::sizeForRenderBuffer(const RenderBuffer& rb,
 
         LOG_GL_ERRORV(glBindVertexArray(0));
         LOG_GL_ERRORV(glBindBuffer(GL_ARRAY_BUFFER, 0));
-        GLenum err = glGetError();
+        err = glGetError();
         if ( err != GL_NO_ERROR )
         {
            logger_base.error( "ShaderEffect::sizeForRenderBuffer() - Error with vertex array - %d", err );
@@ -997,7 +1011,7 @@ ShaderConfig::ShaderConfig(const wxString& filename, const wxString& code, const
     reader.Parse(json, &root);
     _description = root["DESCRIPTION"].AsString();
     wxJSONValue inputs = root["INPUTS"];
-    wxString canvasImgName;
+    wxString canvasImgName, audioFFTName;
     for (int i = 0; i < inputs.Size(); i++)
     {
         wxString type = inputs[i]["TYPE"].AsString();
@@ -1123,6 +1137,14 @@ ShaderConfig::ShaderConfig(const wxString& filename, const wxString& code, const
                 //_canvasMode = true;
             }
         }
+        else if (type == "audioFFT")
+        {
+            if (inputs[i].HasMember("NAME"))
+            {
+                audioFFTName = inputs[i]["NAME"].AsString();
+                logger_base.info("ShaderEffect - found audioFFT shader with name '%s'", static_cast<const char *>(audioFFTName.c_str()));
+            }
+        }
         else if (type == "event")
         {
             // ignore these
@@ -1246,7 +1268,12 @@ ShaderConfig::ShaderConfig(const wxString& filename, const wxString& code, const
     }
     shaderCode.Replace("gl_FragColor", "fragmentColor");
     shaderCode.Replace("vv_FragNormCoord", "isf_FragNormCoord");
-    if (!canvasImgName.empty())
+    if (!audioFFTName.empty())
+    {
+        shaderCode.Replace(audioFFTName, "texSampler");
+        _audioFFTMode = true;
+    }
+    else if (!canvasImgName.empty())
     {
         shaderCode.Replace(canvasImgName, "texSampler");
         _canvasMode = true;
