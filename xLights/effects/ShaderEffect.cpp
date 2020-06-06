@@ -108,6 +108,29 @@ namespace
         return texId;
     }
 
+    GLuint FFTAudioTexture()
+    {
+        GLuint texId = 0;
+
+        LOG_GL_ERRORV(glGenTextures(1, &texId));
+        LOG_GL_ERRORV(glBindTexture(GL_TEXTURE_2D, texId));
+
+        LOG_GL_ERRORV(glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, 128, 1, 0, GL_RED, GL_FLOAT, nullptr));
+
+        static log4cpp::Category& logger_base = log4cpp::Category::getInstance(std::string("log_base"));
+        unsigned err = glGetError();
+        logger_base.info( "FFTAudioTexture() - err == %u", err );
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        LOG_GL_ERRORV(glBindTexture(GL_TEXTURE_2D, 0));
+
+        return texId;
+    }
+
     bool createOpenGLRenderBuffer(int width, int height, GLuint* rbID, GLuint* fbID)
     {
         LOG_GL_ERRORV(glGenRenderbuffers(1, rbID));
@@ -492,6 +515,7 @@ public:
     unsigned s_fbId = 0;
     unsigned s_rbId = 0;
     unsigned s_rbTex = 0;
+    unsigned s_audioTex = 0;
     unsigned s_programId = 0;
     int s_rbWidth = 0;
     int s_rbHeight = 0;
@@ -508,6 +532,7 @@ public:
                          s_fbId,
                          s_rbId,
                          s_rbTex,
+                         s_audioTex,
                          s_programId);
         s_programId = 0;
         s_vertexArrayId = 0;
@@ -515,12 +540,14 @@ public:
         s_fbId = 0;
         s_rbId = 0;
         s_rbTex = 0;
+        s_audioTex = 0;
     }
     static void DestroyResources(unsigned s_vertexArrayId,
                                  unsigned s_vertexBufferId,
                                  unsigned s_fbId,
                                  unsigned s_rbId,
                                  unsigned s_rbTex,
+                                 unsigned s_audioTex,
                                  unsigned s_programId) {
         if (s_programId) {
             LOG_GL_ERRORV(glDeleteProgram(s_programId));
@@ -539,6 +566,9 @@ public:
         }
         if (s_rbTex) {
             LOG_GL_ERRORV(glDeleteTextures(1, &s_rbTex));
+        }
+        if (s_audioTex) {
+            LOG_GL_ERRORV(glDeleteTextures(1, &s_audioTex));
         }
     }
 
@@ -675,6 +705,7 @@ void ShaderEffect::Render(Effect* eff, SettingsMap& SettingsMap, RenderBuffer& b
     unsigned& s_rbId = cache->s_rbId;
     unsigned& s_programId = cache->s_programId;
     unsigned& s_rbTex = cache->s_rbTex;
+    unsigned& s_audioTex = cache->s_audioTex;
     int& s_rbWidth = cache->s_rbWidth;
     int& s_rbHeight = cache->s_rbHeight;
     long& _timeMS = cache->_timeMS;
@@ -731,11 +762,17 @@ void ShaderEffect::Render(Effect* eff, SettingsMap& SettingsMap, RenderBuffer& b
     const std::list<float>* fftData;
     if (_shaderConfig->IsAudioFFTShader())
     {
+        if ( s_audioTex == 0)
+            s_audioTex = FFTAudioTexture();
+
         AudioManager* audioManager = buffer.GetMedia();
         if (audioManager != nullptr)
         {
             fftData = audioManager->GetFrameData(buffer.curPeriod, FRAMEDATA_VU, "");
             logger_base.info("ShaderEffect::Render() - TODO - audio shader rendering with %d", int(fftData->size()));
+
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, s_audioTex );
         }
     }
     // We re-use the same framebuffer for rendering all the shader effects
